@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile \"c:/Dev/Projects/pixii/backend/schemas.py\" \"c:/Dev/Projects/pixii/backend/nodes/ingest.py\" \"c:/Dev/Projects/pixii/backend/utils/engagement.py\" \"c:/Dev/Projects/pixii/backend/nodes/refiner.py\" \"c:/Dev/Projects/pixii/backend/nodes/refiner_node.py\")"
+    ]
+  }
+}
