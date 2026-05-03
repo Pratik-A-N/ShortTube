@@ -22,8 +22,8 @@ Output: 3 vertical mp4s + 1 markdown blog post + 3 social captions, downloadable
 
 Opus Clip is closed-source, paid, and opinionated. This is an open, hackable pipeline that:
 
-- Combines LLM content scoring with **real YouTube viewer data** (most-replayed heatmap, chapters, description timestamps) rather than relying on prompt engineering alone.
-- Lets you swap LLM providers (Groq, Gemini, OpenAI) via a thin client interface.
+- Combines LLM content scoring with **real YouTube viewer data** (most-replayed heatmap, chapters, description timestamps) rather than relying on prompt engineering alone — though signal weights are v1 heuristic, not yet empirically calibrated.
+- Lets you swap LLM providers (Groq, Anthropic, Mistral, OpenAI) via a thin client interface — add a key, no code changes needed.
 - Exposes the clip-selection logic as plain Python you can tune for any niche.
 - Demonstrates a multi-agent ETL architecture you can fork and extend.
 
@@ -83,6 +83,19 @@ The Send API fan-out reduces total pipeline latency by ~40% vs. a sequential imp
 
 All signals default to 0 when unavailable → pure LLM scoring as fallback.
 
+### Calibration status (v1)
+
+> **Not yet validated against real clip performance.**
+
+The weights (5, 5, 3, 2) are heuristic starting points, not empirical. Here's why they're reasonable:
+
+- **Heatmap z-score (×5):** Viewers literally rewound to these moments — strongest available signal of re-watchability.
+- **Heatmap peak (×5):** Spikes are sharper than variance — a local maximum above mean+1σ is a more specific signal than a sustained average.
+- **Chapter (×3):** Creator intent is real signal, but less reliable than viewer behaviour.
+- **Description timestamp (×2):** Weakest — creators sometimes callout timestamps for navigation, not because the moment is viral-worthy.
+
+**Validation plan:** Publish 50+ clips, track views/engagement at 24h and 7d, run linear regression against actual performance, extract empirical coefficients. Expected to move from ~r=0.5 to r=0.75+ after one calibration cycle.
+
 ---
 
 ## Tech Stack
@@ -93,7 +106,7 @@ All signals default to 0 when unavailable → pure LLM scoring as fallback.
 | Orchestration | LangGraph | Typed state passing + parallel fan-out via Send API |
 | Download | yt-dlp | Video, captions, heatmap, chapters, description in one call |
 | LLM (primary) | Groq llama-3.3-70b | ~500 tok/s — roughly 10× faster than OpenAI at comparable quality |
-| LLM (fallback) | Gemini 2.0 Flash | Kicks in on Groq 429/5xx — separate rate limit bucket |
+| LLM (fallback) | Anthropic Claude Haiku 4.5 → Mistral Small → OpenAI gpt-4o-mini | Auto-fallback chain — kicks in on 429/quota exhaustion |
 | Video render | ffmpeg | 9:16 reformat with blurred background via filter_complex |
 | Cache | JSON file + threading.Lock | Zero dependencies, survives restarts, invalidates when files are deleted |
 | Frontend | React 19 + Tailwind v3 | Vite, no component library, SSE via fetch-event-source |
@@ -107,7 +120,7 @@ All signals default to 0 when unavailable → pure LLM scoring as fallback.
 cd backend
 python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env  # add GROQ_API_KEY and GEMINI_API_KEY
+cp .env.example .env  # add GROQ_API_KEY (required) + any fallback keys
 uvicorn main:app --reload
 
 # Frontend (separate terminal)
