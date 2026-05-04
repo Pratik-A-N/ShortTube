@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+import shutil
 import tempfile
 import time
 import yt_dlp
@@ -12,6 +13,44 @@ from utils.engagement import parse_description_timestamps
 
 log = get_logger("nodes.ingest")
 
+# Absolute path to the bundled demo assets (baked into the Docker image).
+_DEMO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "demo")
+
+
+async def _ingest_demo(state: PipelineState, job_dir: str) -> dict:
+    """Skip yt-dlp entirely and use the pre-bundled demo video + captions."""
+    demo_video = os.path.join(_DEMO_DIR, "video.mp4")
+    demo_vtt = os.path.join(_DEMO_DIR, "captions.en.vtt")
+
+    if not os.path.exists(demo_video) or not os.path.exists(demo_vtt):
+        raise FileNotFoundError(
+            f"Demo assets missing in {_DEMO_DIR}. "
+            "Ensure demo/video.mp4 and demo/captions.en.vtt are present in the image."
+        )
+
+    video_path = os.path.join(job_dir, "video.mp4")
+    vtt_path = os.path.join(job_dir, "captions.en.vtt")
+    shutil.copy2(demo_video, video_path)
+    shutil.copy2(demo_vtt, vtt_path)
+
+    log.info(f"[{state.job_id[:8]}] INGEST demo mode — using bundled assets")
+    await emit(ProgressEvent(
+        type="node_complete",
+        node="ingest",
+        message="Loaded demo video (Inside the Mind of a Master Procrastinator — Tim Urban)",
+        progress=100,
+    ))
+
+    return {
+        "video_path": video_path,
+        "vtt_path": vtt_path,
+        "duration_sec": 843.0,
+        "video_title": "Inside the Mind of a Master Procrastinator | Tim Urban | TED",
+        "heatmap": [],
+        "chapters": [],
+        "description_timestamps": [],
+    }
+
 
 async def ingest_node(state: PipelineState) -> dict:
     log.info(f"[{state.job_id[:8]}] INGEST start | url={state.youtube_url}")
@@ -19,6 +58,9 @@ async def ingest_node(state: PipelineState) -> dict:
 
     job_dir = f"tmp/jobs/{state.job_id}"
     os.makedirs(job_dir, exist_ok=True)
+
+    if os.getenv("USE_DEMO_VIDEO", "").strip().lower() == "true":
+        return await _ingest_demo(state, job_dir)
 
     loop = asyncio.get_event_loop()
     queue = progress_queue.get(None)

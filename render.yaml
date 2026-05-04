@@ -12,6 +12,8 @@ services:
         sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: USE_DEMO_VIDEO
+        value: "true"
 
   - type: web
     name: viral-chopper-ui
