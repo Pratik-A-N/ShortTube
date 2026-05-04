@@ -51,7 +51,7 @@ async def ingest_node(state: PipelineState) -> dict:
         "quiet": True,
         "no_warnings": True,
         "progress_hooks": [_progress_hook],
-        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "android_vr", "android", "web"]}},
+        "extractor_args": {"youtube": {"player_client": ["web_creator", "tv_embedded", "android", "web"]}},
         "sleep_interval_requests": 1,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
