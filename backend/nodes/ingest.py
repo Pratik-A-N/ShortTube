@@ -42,7 +42,8 @@ async def ingest_node(state: PipelineState) -> dict:
             loop.call_soon_threadsafe(queue.put_nowait, event)
 
     ydl_opts = {
-        "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
+        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "merge_output_format": "mp4",
         "outtmpl": os.path.join(job_dir, "video.%(ext)s"),
         "writeautomaticsub": True,
         "subtitleslangs": ["en"],

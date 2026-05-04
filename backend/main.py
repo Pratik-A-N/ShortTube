@@ -30,8 +30,14 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*", "X-User-Api-Key", "X-User-Provider"],
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Cache-Control",
+        "Content-Type",
+        "X-User-Api-Key",
+        "X-User-Provider",
+    ],
 )
 
 graph = build_graph()
