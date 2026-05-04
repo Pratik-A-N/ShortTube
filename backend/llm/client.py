@@ -10,6 +10,7 @@ Add a key to unlock that provider as a fallback — no code changes needed.
 
 import re
 import time
+from contextvars import ContextVar
 from typing import Literal
 from utils.logger import get_logger
 
@@ -23,6 +24,17 @@ logger = get_logger("llm.client")
 
 _MAX_RETRIES = 3       # retries per provider on transient rate limits
 _DEFAULT_WAIT = 65     # seconds when retry delay can't be parsed
+
+# Matches common API key formats that providers echo back in error messages.
+_KEY_PATTERN = re.compile(
+    r'(gsk_|sk-proj-|sk-ant-api03-|sk-ant-|sk-)[A-Za-z0-9_\-]{20,}'
+    r'|(?:api[_\-\s]?key|apikey|authorization|bearer)[\s:=]+[A-Za-z0-9_\-\.]{20,}',
+    re.IGNORECASE,
+)
+
+def _redact(value) -> str:
+    """Strip API key-like strings from a value before it reaches logs or the client."""
+    return _KEY_PATTERN.sub('[REDACTED]', str(value))
 
 
 # ---------------------------------------------------------------------------
@@ -170,10 +182,10 @@ class LLMClient:
                         logger.warning(f"[LLM] {name} rate-limited — waiting {wait:.0f}s (attempt {attempt+1})")
                         time.sleep(wait)
                     else:
-                        logger.warning(f"[LLM] {name} failed: {type(e).__name__}: {e} — next provider")
+                        logger.warning(f"[LLM] {name} failed: {type(e).__name__}: {_redact(e)} — next provider")
                         break
 
-        raise LLMUnavailableError(f"All providers failed. Last error: {last_error}")
+        raise LLMUnavailableError(f"All providers failed. Last error: {_redact(last_error)}")
 
     # ------------------------------------------------------------------
 
@@ -231,13 +243,48 @@ class LLMClient:
 
 
 # ---------------------------------------------------------------------------
-# Shared singleton — import and use this in nodes instead of LLMClient()
+# Shared singleton + per-request user override
 # ---------------------------------------------------------------------------
+
+# Set this context var to use a caller-supplied key for the duration of a request.
+user_llm_override: ContextVar['LLMClient | None'] = ContextVar('user_llm_override', default=None)
 
 _client: LLMClient | None = None
 
 def get_llm_client() -> LLMClient:
+    override = user_llm_override.get(None)
+    if override is not None:
+        return override
     global _client
     if _client is None:
         _client = LLMClient()
     return _client
+
+
+_PROVIDER_BASE_URLS = {
+    "mistral": "https://api.mistral.ai/v1",
+    "together": "https://api.together.xyz/v1",
+}
+
+def build_for_user(provider: str, api_key: str) -> LLMClient:
+    """Construct a single-provider LLMClient using the caller's own API key."""
+    client = object.__new__(LLMClient)
+    client._chain = []
+
+    if provider == "groq":
+        import groq as groq_sdk
+        client._chain.append(("groq", groq_sdk.Groq(api_key=api_key)))
+    elif provider == "anthropic":
+        import anthropic as anthropic_sdk
+        client._chain.append(("anthropic", anthropic_sdk.Anthropic(api_key=api_key)))
+    elif provider in ("openai", "mistral", "together"):
+        from openai import OpenAI
+        kwargs = {"api_key": api_key}
+        if provider in _PROVIDER_BASE_URLS:
+            kwargs["base_url"] = _PROVIDER_BASE_URLS[provider]
+        client._chain.append((provider, OpenAI(**kwargs)))
+    else:
+        raise ValueError(f"Unknown provider: {provider!r}")
+
+    logger.info(f"[LLM] user-supplied key: provider={provider}")
+    return client

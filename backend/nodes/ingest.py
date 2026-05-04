@@ -48,7 +48,17 @@ async def ingest_node(state: PipelineState) -> dict:
         "quiet": True,
         "no_warnings": True,
         "progress_hooks": [_progress_hook],
+        # Use the Android player client to bypass bot-detection without cookies.
+        # Falls back to web if android is unavailable for the specific video.
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
+
+    # Optional: path to a Netscape-format cookies.txt exported from a logged-in
+    # browser session. Set YTDL_COOKIES_FILE in .env for production deployments.
+    cookies_file = os.getenv("YTDL_COOKIES_FILE", "").strip()
+    if cookies_file and os.path.exists(cookies_file):
+        ydl_opts["cookiefile"] = cookies_file
+        log.info(f"[{state.job_id[:8]}] INGEST using cookies file: {cookies_file}")
 
     def _download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
