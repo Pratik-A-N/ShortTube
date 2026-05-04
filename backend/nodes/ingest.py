@@ -51,10 +51,19 @@ async def ingest_node(state: PipelineState) -> dict:
         "quiet": True,
         "no_warnings": True,
         "progress_hooks": [_progress_hook],
-        # Use the Android player client to bypass bot-detection without cookies.
-        # Falls back to web if android is unavailable for the specific video.
-        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "android_vr", "android", "web"]}},
+        "sleep_interval_requests": 1,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
+        },
     }
+
+    # Residential proxy — routes around YouTube's datacenter IP blocklist.
+    # Set YTDLP_PROXY in Render env vars: http://user:pass@host:port
+    proxy = os.getenv("YTDLP_PROXY", "").strip()
+    if proxy:
+        ydl_opts["proxy"] = proxy
+        log.info(f"[{state.job_id[:8]}] INGEST using proxy")
 
     # Cookies support — two options (B64 env var takes priority):
     # 1. YTDL_COOKIES_B64: base64-encoded cookies.txt — works on any host (no secret files needed)
