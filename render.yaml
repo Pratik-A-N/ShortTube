@@ -25,6 +25,8 @@ services:
     envVars:
       - key: VITE_API_BASE
         sync: false
+      - key: VITE_DEMO_MODE
+        value: "true"
     routes:
       - type: rewrite
         source: /*

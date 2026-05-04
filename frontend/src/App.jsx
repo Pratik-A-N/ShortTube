@@ -116,6 +116,8 @@ function SettingsModal({ open, onClose, provider, onProvider, apiKey, onApiKey }
   );
 }
 
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+
 export default function App() {
   const [status, setStatus] = useState('idle');
   const [events, setEvents] = useState([]);
@@ -206,6 +208,12 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {DEMO_MODE && (
+        <div className="border-b border-amber-500/20 bg-amber-500/5 px-6 py-2.5 text-center text-xs text-amber-400">
+          Demo mode — the pipeline always runs on a fixed video regardless of the URL entered.
+        </div>
+      )}
 
       <main className="mx-auto max-w-5xl px-6 py-8 space-y-8">
         <URLInput onSubmit={handleSubmit} disabled={status === 'processing'} />
