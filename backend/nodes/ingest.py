@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import os
+import tempfile
 import time
 import yt_dlp
 
@@ -53,10 +55,20 @@ async def ingest_node(state: PipelineState) -> dict:
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
 
-    # Optional: path to a Netscape-format cookies.txt exported from a logged-in
-    # browser session. Set YTDL_COOKIES_FILE in .env for production deployments.
+    # Cookies support — two options (B64 env var takes priority):
+    # 1. YTDL_COOKIES_B64: base64-encoded cookies.txt — works on any host (no secret files needed)
+    # 2. YTDL_COOKIES_FILE: path to cookies.txt on disk — for local dev or Render paid plan
+    _cookies_tmp = None
+    cookies_b64 = os.getenv("YTDL_COOKIES_B64", "").strip()
     cookies_file = os.getenv("YTDL_COOKIES_FILE", "").strip()
-    if cookies_file and os.path.exists(cookies_file):
+
+    if cookies_b64:
+        _cookies_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+        _cookies_tmp.write(base64.b64decode(cookies_b64).decode("utf-8"))
+        _cookies_tmp.flush()
+        ydl_opts["cookiefile"] = _cookies_tmp.name
+        log.info(f"[{state.job_id[:8]}] INGEST using cookies from YTDL_COOKIES_B64")
+    elif cookies_file and os.path.exists(cookies_file):
         ydl_opts["cookiefile"] = cookies_file
         log.info(f"[{state.job_id[:8]}] INGEST using cookies file: {cookies_file}")
 
@@ -65,7 +77,14 @@ async def ingest_node(state: PipelineState) -> dict:
             return ydl.extract_info(state.youtube_url, download=True)
 
     t0 = time.time()
-    info = await loop.run_in_executor(None, _download)
+    try:
+        info = await loop.run_in_executor(None, _download)
+    finally:
+        if _cookies_tmp:
+            try:
+                os.unlink(_cookies_tmp.name)
+            except OSError:
+                pass
 
     title = info.get("title", "Untitled")
     duration_sec = float(info.get("duration", 0))
