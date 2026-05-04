@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cd backend
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env   # add GROQ_API_KEY and GEMINI_API_KEY
+cp .env.example .env   # add at least one LLM key (GROQ_API_KEY recommended)
 
 uvicorn main:app --reload --port 8000   # dev server
 ```
@@ -64,17 +64,17 @@ The `fan_out` function in `pipeline.py` returns a list of `Send` objects (LangGr
 
 | File | Role |
 |---|---|
-| `backend/main.py` | FastAPI app, `/api/process` SSE endpoint, `/files/{job_id}/{filename}` artifact serving |
+| `backend/main.py` | FastAPI app, `/api/process` SSE endpoint, `/files/{job_id}/{filename}` artifact serving, rate limiting (10 req/min/IP via slowapi) |
 | `backend/pipeline.py` | LangGraph graph definition, `build_graph()`, `fan_out()` |
 | `backend/schemas.py` | Pydantic models — `PipelineState` is the graph's state type |
-| `backend/config.py` | Env vars and constants (`GROQ_MODEL`, `GEMINI_MODEL`, `DEMO_URL`, window sizes) |
-| `backend/llm/client.py` | Provider-agnostic `LLMClient` — tries Groq first, falls back to Gemini on 429/5xx |
+| `backend/config.py` | Env vars and constants (`GROQ_MODEL`, `DEMO_URL`, window sizes) |
+| `backend/llm/client.py` | Provider-agnostic `LLMClient` — tries providers in `LLM_PROVIDER_ORDER`, supports per-request user key via `user_llm_override` context var and `build_for_user()`; `_redact()` strips keys from error messages |
 | `backend/llm/prompts.py` | All LLM prompts as plain Python strings |
 | `backend/nodes/` | One file per graph node: `ingest`, `transcript`, `scanner`, `refiner`, `clipper`, `blog_writer`, `caption_writer`, `aggregator` |
 | `backend/utils/ffmpeg_utils.py` | `extract_segment_vtt()` + `render_vertical_clip()` — subtitle shift + 9:16 blurred-background reformat |
 | `backend/utils/progress.py` | `ProgressEvent` model, `emit()` helper, `progress_queue` context var |
-| `frontend/src/App.jsx` | Top-level state machine: `idle → processing → complete | error` |
-| `frontend/src/api.js` | `startProcessing()` using `@microsoft/fetch-event-source` |
+| `frontend/src/App.jsx` | Top-level state machine: `idle → processing → complete | error`; settings modal (gear icon) for user-supplied LLM key |
+| `frontend/src/api.js` | `startProcessing()` using `@microsoft/fetch-event-source`; passes user key as `X-User-Api-Key` / `X-User-Provider` headers |
 
 ### SSE event types
 
@@ -95,14 +95,27 @@ Each request gets a UUID `job_id` stored on `PipelineState`. All file I/O goes t
 
 ## LLM provider details
 
-- Primary: Groq `llama-3.3-70b-versatile` (JSON mode via `response_format={"type":"json_object"}`)
-- Fallback: Google Gemini `gemini-2.0-flash` (JSON mode via `response_mime_type="application/json"`)
-- Scanner uses `temperature=0.2`; Refiner `0.4`; Blog `0.6`; Captions `0.7`
+Server-side providers (configured via `.env`, tried in `LLM_PROVIDER_ORDER`):
+- **Groq** `llama-3.3-70b-versatile` — primary, free tier
+- **Anthropic** `claude-haiku-4-5` — fallback
+- **Mistral** `mistral-small-latest` — fallback
+- **Together AI** `Llama-3.3-70B-Instruct-Turbo` — fallback
+- **OpenAI** `gpt-4o-mini` — fallback
+
+All use JSON mode. Scanner `temperature=0.2`; Refiner `0.4`; Blog `0.6`; Captions `0.7`.
+
+### User-supplied API keys
+
+Users can bring their own key via the settings modal (gear icon, top-right). The key is sent as an `X-User-Api-Key` header (never a query param — avoids uvicorn access logs) and an `X-User-Provider` header. `build_for_user(provider, api_key)` in `llm/client.py` creates a single-provider `LLMClient`; `user_llm_override` context var makes all nodes use it for the duration of that request. `_redact()` strips key-like strings from all error messages before logging or sending to the client.
 
 ## ffmpeg subtitle approach
 
 After cutting a segment starting at `T` seconds, VTT timestamps are still at `T+`. Solution: `extract_segment_vtt()` writes a temp VTT with only cues in range and timestamps shifted to start at 00:00, then passes it to ffmpeg's `subtitles` filter. Vertical reformat uses blurred-background scaling (center-crop + scale + overlay).
 
+## yt-dlp bot-detection workaround
+
+`ingest.py` sets `extractor_args: {youtube: {player_client: [android, web]}}` to bypass YouTube's bot-detection without cookies. If that's not enough (rare), set `YTDL_COOKIES_FILE` in `.env` pointing to a Netscape-format `cookies.txt` exported from a logged-in browser session. On Render, upload it as a secret file and set `YTDL_COOKIES_FILE=/etc/secrets/cookies.txt`.
+
 ## Deployment
 
-`render.yaml` defines two Render services: `viral-chopper-api` (Docker, `backend/`) and `viral-chopper-ui` (static, `frontend/`). Backend needs `GROQ_API_KEY` and `GEMINI_API_KEY` as secrets. Frontend needs `VITE_API_BASE` pointing to the backend URL.
+`render.yaml` defines two Render services: `viral-chopper-api` (Docker, `backend/`) and `viral-chopper-ui` (static, `frontend/`). Backend secrets needed: at least one LLM provider key, optionally `YTDL_COOKIES_FILE`. Frontend needs `VITE_API_BASE` pointing to the backend URL.
