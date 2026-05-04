@@ -9,6 +9,9 @@ from utils.logger import get_logger
 
 log = get_logger("nodes.clipper")
 
+# Render starter tier has 512MB RAM — cap concurrent ffmpeg processes to 1.
+_ffmpeg_sem = asyncio.Semaphore(1)
+
 
 async def render_one_clip(task: ClipperTask) -> dict:
     clip = task.clip
@@ -31,9 +34,10 @@ async def render_one_clip(task: ClipperTask) -> dict:
     log.info(f"[{task.job_id[:8]}] CLIPPER_{clip.rank} VTT extracted → {segment_vtt}")
 
     t0 = time.time()
-    await asyncio.to_thread(
-        render_vertical_clip, task.video_path, segment_vtt, clip.start_sec, clip.end_sec, output_path
-    )
+    async with _ffmpeg_sem:
+        await asyncio.to_thread(
+            render_vertical_clip, task.video_path, segment_vtt, clip.start_sec, clip.end_sec, output_path
+        )
     file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
     log.info(f"[{task.job_id[:8]}] CLIPPER_{clip.rank} ffmpeg done in {time.time()-t0:.1f}s | size={file_size_mb:.1f}MB | output={output_path}")
 

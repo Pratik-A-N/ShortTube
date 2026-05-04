@@ -63,9 +63,9 @@ def render_vertical_clip(
     ffmpeg_bin = ffmpeg_path or "ffmpeg"
 
     vf = (
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,boxblur=20:5[bg];"
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
+        "[0:v]scale=720:1280:force_original_aspect_ratio=increase,"
+        "crop=720:1280,boxblur=20:5[bg];"
+        "[0:v]scale=720:1280:force_original_aspect_ratio=decrease[fg];"
         "[bg][fg]overlay=(W-w)/2:(H-h)/2[out]"
     )
 
